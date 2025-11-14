@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <title>Perfume Chatbot</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <style>
+    body {
+      font-family: Pretendard, sans-serif;
+      background: #fff9fc;
+      display: flex;
+      justify-content: center;
+      padding: 20px;
+      margin: 0;
+    }
+    .wrap { width: 100%; max-width: 420px; }
+    h1 { text-align: center; color:#d76da4; margin-bottom: 8px; }
+    .chatbox {
+      width: 100%; height: 520px; background: #fff;
+      border: 2px solid #f4d0e4; border-radius: 16px;
+      display: flex; flex-direction: column; overflow: hidden;
+      box-shadow: 0 6px 16px rgba(0,0,0,0.05);
+    }
+    .chat-window { flex:1; padding:12px; overflow-y:auto; }
+    .msg-row { margin-bottom:10px; display:flex; }
+    .msg-row.user { justify-content:flex-end; }
+    .msg-bubble {
+      padding:10px 13px; max-width:80%;
+      border-radius:12px; white-space:pre-line;
+      font-size:14px; line-height:1.4;
+    }
+    .msg-bubble.user { background:#ffddee; border-bottom-right-radius:2px; }
+    .msg-bubble.bot  { background:#f7e8f3; border-bottom-left-radius:2px; }
+    .input-area { display:flex; border-top:1px solid #f0d5e5; }
+    .input-area input {
+      flex:1; padding:12px; border:none; font-size:14px; outline:none;
+    }
+    .input-area button {
+      width:80px; border:none; background:#d76da4;
+      color:#fff; font-size:14px; cursor:pointer;
+    }
+  </style>
+</head>
+<body>
+
+<div class="wrap">
+  <h1>향수 추천 챗봇</h1>
+
+  <div class="chatbox">
+    <div id="chat-window" class="chat-window"></div>
+
+    <div class="input-area">
+      <input id="user-input" placeholder="향 느낌 입력" />
+      <button id="send-btn">전송</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  // 내가 정리한 10개 향수 정보
+  const perfumes = [
+    { id:1, name:"01 First Memory",  keywords:["상큼","시트러스","레몬","산뜻"], notes:["레몬","베르가못","시트러스"] },
+    { id:2, name:"02 Sweet Room",    keywords:["달콤","바닐라","부드러운","포근"], notes:["바닐라","머스크","카라멜"] },
+    { id:3, name:"03 Rainy Day",     keywords:["시원","맑은","비누향","청량","깨끗"], notes:["비누","화이트머스크"] },
+    { id:4, name:"04 Wood Ground",   keywords:["우디","나무향","묵직","스모키","깊은"], notes:["샌달우드","시더","파출리"] },
+    { id:5, name:"05 Pink Mood",     keywords:["플로럴","꽃향","로맨틱","부드러움"], notes:["장미","자스민","피오니"] },
+    { id:6, name:"06 Fresh Day",     keywords:["과일향","상큼","달달","톡톡"], notes:["복숭아","베리","사과"] },
+    { id:7, name:"07 Deep Amber",    keywords:["엠버","묵직","따뜻함","섹시","농밀"], notes:["앰버","파출리"] },
+    { id:8, name:"08 Soft Clean",    keywords:["비누향","코튼","포근","깔끔","잔잔"], notes:["코튼","화이트머스크","린넨"] },
+    { id:9, name:"09 Night Walk",    keywords:["잔잔","고요","차분","은은"], notes:["아이리스","티","머스크"] },
+    { id:10,name:"10 Sunset Moment", keywords:["따뜻","노을","감성","편안"], notes:["오렌지","바닐라","머스크"] }
+  ];
+
+  // 유사어 그룹 (내가 직접 묶은 그룹)
+  const synonymGroups = {
+    "상큼": ["상큼","상쾌","산뜻","시원한상큼","레몬느낌","시트러스"],
+    "달콤": ["달콤","달달","스윗","디저트향"],
+    "부드러움": ["부드러움","부드러운","포근","따뜻한포근","소프트"],
+    "비누향": ["비누","솝","비누향","비누느낌","샤워후향"],
+    "우디": ["우디","나무","우드","스모키","묵직"],
+    "플로럴": ["꽃","플로랄","플로럴","꽃향","로맨틱"],
+    "따뜻": ["따뜻","웜","포근한따뜻","노을느낌"],
+    "깨끗": ["깨끗","클린","청량","깔끔"]
+  };
+
+  // 전처리
+  function cleanText(t) {
+    return t.replace(/\s+/g, "").toLowerCase();
+  }
+
+  // 문자열이 유사어 그룹에 속하는지 체크
+  function checkSynonymMatch(text, keyword) {
+    for (const groupKey in synonymGroups) {
+      const group = synonymGroups[groupKey];
+      if (group.includes(keyword)) {
+        if (group.some(g => text.includes(g))) return true;
+      }
+    }
+    return false;
+  }
+
+  // 추천 점수 계산 (강화 버전)
+  function getScores(userText) {
+    const text = cleanText(userText);
+
+    return perfumes.map(p => {
+      let score = 0;
+
+      // 키워드 매칭 (+4)
+      p.keywords.forEach(k => {
+        if (text.includes(k)) score += 4;
+        if (checkSynonymMatch(text, k)) score += 3;
+      });
+
+      // 노트 매칭 (+3)
+      p.notes.forEach(n => {
+        if (text.includes(n)) score += 3;
+        if (checkSynonymMatch(text, n)) score += 2;
+      });
+
+      // 형태 변화 대응 (부드럽- , 포근-, 스모키-)
+      if (/부드|포근|스모키|상큼|깨끗/.test(text)) {
+        if (p.keywords.some(k => text.includes(k.slice(0,2)))) score += 2;
+      }
+
+      return { ...p, score };
+    }).sort((a,b) => b.score - a.score);
+  }
+
+  function recommend(text) {
+    const list = getScores(text);
+
+    if (list[0].score === 0)
+      return "조금 더 자세히 말해줘! (예: 상큼한 과일향, 포근한 비누향, 우디하고 묵직한 향)";
+
+    let msg = `"${list[0].name}" 추천!\n`;
+    if (list[1].score > 0)
+      msg += `"${list[1].name}"도 괜찮을 것 같아.`;
+
+    return msg;
+  }
+
+  // UI
+  const chat = document.getElementById("chat-window");
+  const input = document.getElementById("user-input");
+  const btn = document.getElementById("send-btn");
+
+  function addMsg(text, who) {
+    const row = document.createElement("div");
+    row.classList.add("msg-row", who);
+
+    const bubble = document.createElement("div");
+    bubble.classList.add("msg-bubble", who);
+    bubble.textContent = text;
+
+    row.appendChild(bubble);
+    chat.appendChild(row);
+    chat.scrollTop = chat.scrollHeight;
+  }
+
+  function send() {
+    const text = input.value.trim();
+    if (!text) return;
+
+    addMsg(text, "user");
+    input.value = "";
+
+    const reply = recommend(text);
+    setTimeout(() => addMsg(reply, "bot"), 150);
+  }
+
+  btn.addEventListener("click", send);
+  input.addEventListener("keydown", e => { if (e.key === "Enter") send(); });
+
+  addMsg("안녕! 원하는 향 느낌을 말해줘.\n예) 상큼한 과일향 / 따뜻하고 포근한 느낌 / 우디하고 묵직한 향", "bot");
+</script>
+
+</body>
+</html>
